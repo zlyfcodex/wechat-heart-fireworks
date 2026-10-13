@@ -1,0 +1,1411 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#030006">
+<title>爱心烟花文字 · 实时运行监视器</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #020004;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body { position: fixed; inset: 0; }
+  canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  #bg { z-index: 0; }
+  #fx { z-index: 2; }
+  #blackout {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    pointer-events: none;
+    background: #000;
+    opacity: 0;
+    transition: opacity 5s linear;
+  }
+  #blackout.active { opacity: 1; }
+  #code-atmosphere {
+    position: fixed;
+    z-index: 1;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 48%;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: .16;
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 68%, transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0%, #000 68%, transparent 100%);
+  }
+  #code-atmosphere-track {
+    padding: 28px 18px;
+    animation: none; transform: translate3d(0,0,0);
+    will-change: transform;
+  }
+  #code-atmosphere-track.finish {
+    animation-duration: 1.1s;
+    animation-iteration-count: 1;
+    animation-fill-mode: forwards;
+  }
+  .code-bg-line {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    min-height: 17px;
+    color: rgba(239, 201, 226, .44);
+    font: 500 10px/1.7 ui-monospace, Menlo, Consolas, monospace;
+    white-space: nowrap;
+  }
+  .code-bg-line .n {
+    width: 23px;
+    flex: none;
+    text-align: right;
+    color: rgba(255, 170, 215, .22);
+  }
+  .code-bg-line code { font: inherit; }
+  @keyframes codeDrift {
+    from { transform: translateY(-5%); }
+    to { transform: translateY(-48%); }
+  }
+  #monitor {
+    position: fixed;
+    z-index: 6;
+    top: auto;
+    right: 18px;
+    bottom: max(18px, env(safe-area-inset-bottom));
+    width: min(236px, calc(100vw - 24px));
+    height: 196px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    pointer-events: none;
+    border: 1px solid rgba(255, 164, 216, .26);
+    border-radius: 18px;
+    background:
+      linear-gradient(145deg, rgba(31, 9, 31, .86), rgba(6, 2, 10, .94)),
+      rgba(5, 1, 8, .92);
+    box-shadow:
+      0 28px 80px rgba(0, 0, 0, .58),
+      0 0 44px rgba(255, 57, 158, .13),
+      inset 0 1px 0 rgba(255, 255, 255, .05);
+    backdrop-filter: blur(18px) saturate(145%);
+    -webkit-backdrop-filter: blur(18px) saturate(145%);
+  }
+  #monitor::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    pointer-events: none;
+    background: linear-gradient(110deg, rgba(255,255,255,.045), transparent 28%, transparent 72%, rgba(255,120,190,.035));
+  }
+  #monitor-head {
+    height: 30px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 12px;
+    border-bottom: 1px solid rgba(255, 166, 218, .14);
+    background: rgba(255, 255, 255, .018);
+  }
+  .dots { display: flex; gap: 5px; }
+  .dots i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(255, 185, 224, .26);
+  }
+  .dots i:first-child { background: #ff78b9; box-shadow: 0 0 10px rgba(255, 86, 171, .75); }
+  #monitor-title {
+    flex: 1;
+    color: rgba(255, 225, 241, .78);
+    font: 600 8.5px/1 ui-monospace, Menlo, Consolas, monospace;
+    letter-spacing: .16em;
+    white-space: nowrap;
+  }
+  #live {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: rgba(255, 215, 236, .72);
+    font: 600 7.5px/1 ui-monospace, Menlo, Consolas, monospace;
+    letter-spacing: .12em;
+  }
+  #live span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #ff6bb7;
+    box-shadow: 0 0 12px rgba(255, 84, 172, .95);
+    animation: livePulse 1.15s ease-in-out infinite;
+  }
+  @keyframes livePulse {
+    0%, 100% { opacity: .45; transform: scale(.76); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+  #monitor-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+  #code-wrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 7px 9px 6px;
+    background: rgba(5, 1, 8, .58);
+  }
+  #code-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: rgba(255, 187, 224, .52);
+    font: 600 7px/1 ui-monospace, Menlo, Consolas, monospace;
+    letter-spacing: .1em;
+  }
+  #line-status { color: rgba(255, 214, 237, .4); }
+  #telemetry {
+    flex: none;
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    margin-top: 3px;
+    color: rgba(255, 213, 235, .58);
+    font: 700 6px/1 ui-monospace, Menlo, Consolas, monospace;
+    letter-spacing: .05em;
+    text-shadow: 0 0 8px rgba(255, 55, 158, .45);
+  }
+  #code-viewport {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    margin-top: 3px;
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 10%, #000 90%, transparent);
+    mask-image: linear-gradient(to bottom, transparent, #000 10%, #000 90%, transparent);
+  }
+  #code-viewport::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 39%;
+    z-index: 3;
+    height: 13px;
+    pointer-events: none;
+    border-left: 1px solid rgba(255, 104, 183, .9);
+    background: linear-gradient(90deg, rgba(255, 66, 166, .17), rgba(255, 66, 166, .03), transparent);
+    box-shadow: 0 0 14px rgba(255, 57, 158, .18);
+    animation: executeScan 1.2s ease-in-out infinite;
+  }
+  @keyframes executeScan {
+    0%, 100% { transform: translateY(-1px); opacity: .72; }
+    50% { transform: translateY(1px); opacity: 1; }
+  }
+  #code-track {
+    position: relative;
+    z-index: 2;
+    will-change: transform;
+  }
+  .code-line {
+    display: flex;
+    gap: 5px;
+    align-items: baseline;
+    min-height: 13px;
+    padding: 0 2px;
+    border-left: 1px solid transparent;
+    color: rgba(255, 226, 242, .34);
+    font: 500 7.2px/1.5 ui-monospace, Menlo, Consolas, monospace;
+    white-space: nowrap;
+    transition: color .12s ease, background .12s ease, border-color .12s ease;
+  }
+  .code-line .ln {
+    width: 13px;
+    flex: none;
+    color: rgba(255, 178, 219, .2);
+    text-align: right;
+  }
+  .code-line code { font: inherit; }
+  .tok-kw { color: #ff89c7; }
+  .tok-fn { color: #caa9ff; }
+  .tok-str { color: #ffd2e8; }
+  .tok-num { color: #ffe6a8; }
+  .tok-op { color: #8bd9ff; }
+  .tok-com { color: rgba(255, 180, 215, .44); font-style: italic; }
+  .tok-punc { color: rgba(255, 220, 240, .48); }
+  .code-line.active {
+    color: #fff4fa;
+    border-left-color: #ff72ba;
+    background: linear-gradient(90deg, rgba(255, 88, 173, .17), rgba(255, 88, 173, .015));
+    text-shadow: 0 0 12px rgba(255, 78, 170, .68);
+  }
+  .code-line.active .ln { color: #ff85c4; }
+  .code-line.active code::after {
+    content: '▌';
+    margin-left: 2px;
+    color: #ff8ac5;
+    animation: cursorBlink .7s steps(1) infinite;
+  }
+  #terminal {
+    flex: none;
+    margin-top: 3px;
+    padding-top: 3px;
+    border-top: 1px solid rgba(255, 166, 218, .12);
+    overflow: hidden;
+    color: rgba(255, 193, 226, .6);
+    font: 600 5.8px/1.3 ui-monospace, Menlo, Consolas, monospace;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  #terminal .cursor {
+    margin-left: 3px;
+    color: #ff83c5;
+    animation: cursorBlink .8s steps(1) infinite;
+  }
+  @keyframes cursorBlink { 50% { opacity: 0; } }
+  #code-progress {
+    flex: none;
+    height: 1px;
+    margin-top: 4px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, .07);
+  }
+  #code-progress i {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: linear-gradient(90deg, #ff4da6, #ffd4ea);
+    box-shadow: 0 0 8px rgba(255, 80, 170, .8);
+  }
+  @media (max-width: 760px) {
+    #code-atmosphere { width: 100%; opacity: .09; }
+    #code-atmosphere-track { padding: 18px 10px; }
+    .code-bg-line { min-height: 13px; font-size: 7px; }
+    #monitor {
+      left: auto;
+      right: 10px;
+      top: auto;
+      bottom: max(10px, env(safe-area-inset-bottom));
+      width: min(200px, calc(100vw - 20px));
+      height: 142px;
+      border-radius: 12px;
+    }
+    #monitor-head {
+      height: 28px;
+      padding: 0 8px;
+      gap: 6px;
+    }
+    .dots { gap: 3px; }
+    .dots i { width: 5px; height: 5px; }
+    #monitor-title { font-size: 7px; letter-spacing: .1em; }
+    #live { font-size: 6px; }
+    #code-wrap { padding: 4px 5px 3px; }
+    #code-head { font-size: 5.8px; }
+    #telemetry { font-size: 5.2px; margin-top: 2px; }
+    .code-line {
+      gap: 3px;
+      min-height: 10px;
+      font-size: 6.1px;
+      line-height: 1.35;
+      padding: 0 1px;
+    }
+    .code-line .ln { width: 10px; }
+    #code-viewport { margin-top: 2px; }
+    #code-viewport::before { height: 11px; }
+    #terminal { margin-top: 2px; padding-top: 2px; font-size: 5.2px; }
+    #code-progress { margin-top: 2px; }
+  }
+  @media (max-height: 520px) {
+    #monitor {
+      width: min(190px, calc(100vw - 20px));
+      height: 120px;
+    }
+  }
+</style>
+</head>
+<body>
+<canvas id="bg" aria-hidden="true"></canvas>
+<canvas id="fx" aria-hidden="true"></canvas>
+<div id="code-atmosphere" aria-hidden="true"><div id="code-atmosphere-track"></div></div>
+<div id="blackout" aria-hidden="true"></div>
+<aside id="monitor" aria-label="实时运行监视器">
+  <div id="monitor-head">
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div id="monitor-title">BIRTHDAY CODE</div>
+    <div id="live"><span></span>LIVE</div>
+  </div>
+  <div id="monitor-body">
+    <div id="code-wrap">
+      <div id="code-head">
+        <span>birthday_letter.js</span>
+        <span id="line-status">L01/27</span>
+      </div>
+      <div id="telemetry">
+        <span id="phase-label">BOOT</span>
+        <span id="fps-label">60 FPS</span>
+        <span id="particle-label">0 P</span>
+      </div>
+      <div id="code-viewport"><div id="code-track"></div></div>
+      <div id="terminal"><span id="terminal-text">&gt; canvas.init()</span><span class="cursor">_</span></div>
+      <div id="code-progress"><i id="code-progress-fill"></i></div>
+    </div>
+  </div>
+</aside>
+<script>
+(function () {
+  'use strict';
+  /* ===== 只改这里：姓名与祝福段落 ===== */
+  var CONFIG = {
+    name: '祝',
+    blessings: [
+      '我的小猪',
+      '生日快乐',
+      'o(*￣▽￣*)ブ'
+    ]
+  };
+  /* ==================================== */
+  var bg = document.getElementById('bg');
+  var fx = document.getElementById('fx');
+  var bgCtx = bg.getContext('2d');
+  var ctx = fx.getContext('2d');
+  var textCanvas = document.createElement('canvas');
+  var textCtx = textCanvas.getContext('2d');
+  var monitor = document.getElementById('monitor');
+  var phaseLabel = document.getElementById('phase-label');
+  var fpsLabel = document.getElementById('fps-label');
+  var particleLabel = document.getElementById('particle-label');
+  var terminalText = document.getElementById('terminal-text');
+  var lineStatus = document.getElementById('line-status');
+  var progressFill = document.getElementById('code-progress-fill');
+  var codeViewport = document.getElementById('code-viewport');
+  var codeTrack = document.getElementById('code-track');
+  var codeAtmosphere = document.getElementById('code-atmosphere');
+  var codeAtmosphereTrack = document.getElementById('code-atmosphere-track');
+  var blackout = document.getElementById('blackout');
+  var codeLineNodes = [];
+  var w = 0;
+  var h = 0;
+  var dpr = 1;
+  var stage = { cx: 0, cy: 0, w: 0, h: 0 };
+  var heart = { cx: 0, cy: 0, scale: 1 };
+  var stars = [];
+  var particles = [];
+  var current = null;
+  var rocket = null;
+  var messageIndex = 0;
+  var phase = 'heartLaunch';
+  var phaseStart = 0;
+  var lastTime = 0;
+  var maxParticles = 2200;
+  var ROCKET_GRAVITY = 520;
+  var HEART_FORM_TIME = 8000;
+  var HEART_ROTATION_TIME = 8000;
+  var HEART_BURST_TIME = 620;
+  var HEART_REFORM_TIME = 3000;
+  var MESSAGE_LIFE = 2000;
+  var FONT_FAMILY = '"Songti SC","STSong","Noto Serif CJK SC","Source Han Serif SC",serif';
+  var KAOMOJI_FONT = '"Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo","MS Gothic","Apple Symbols","Arial Unicode MS",sans-serif';
+  var messages = [{ text: CONFIG.name, kind: 'name' }];
+  for (var mi = 0; mi < CONFIG.blessings.length; mi++) {
+    messages.push({ text: CONFIG.blessings[mi], kind: 'blessing' });
+  }
+  var smoothFps = 60;
+  var monitorClock = 0;
+  var lastRunningLine = 0;
+  var codeStartedAt = 0;
+  var lastBaseEmit = 0;
+  var lastWispEmit = 0;
+  var chaosUntil = 0;
+  var heartSpinStart = 0;
+  var outroStarted = false;
+  var PALETTE = [
+    { r: 255, g: 82, b: 166 },
+    { r: 255, g: 133, b: 198 },
+    { r: 255, g: 180, b: 221 },
+    { r: 255, g: 229, b: 246 }
+  ];
+  var CODE_LINES = [
+    "/* birthday_letter.js */",
+    "const to = \"我的小猪\";",
+    "const wish = [\"祝\", \"我的小猪\", \"生日快乐\", \"o(*￣▽￣*)ブ\"];",
+    "const palette = [\"#ffd6e0\", \"#ff9fce\", \"#fff1f8\"];",
+    "",
+    "function heart(t) {",
+    "  // 想你的形状，是一颗不会消失的爱心",
+    "  const x = 16 * Math.pow(Math.sin(t), 3);",
+    "  const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t);",
+    "  return { x: centerX + x * scale, y: centerY - y * scale };",
+    "}",
+    "",
+    "function launch(color) {",
+    "  // 从底部升空，在夜空里爆开",
+    "  return rocket.fromBottom().burst(color);",
+    "}",
+    "",
+    "function write(text) {",
+    "  // 让每一颗粒子，都飞向这句话",
+    "  particles.morphTo(text);",
+    "  hold(1000).then(() => particles.fadeOut());",
+    "}",
+    "",
+    "wish.forEach((text, index) => {",
+    "  launch(palette[index % palette.length]);",
+    "  write(text, index, performance.now());",
+    "});"
+  ];
+  function clamp(v, a, b) {
+    return Math.max(a, Math.min(b, v));
+  }
+  function easeOut(t) {
+    return 1 - Math.pow(1 - t, 3);
+  }
+  function bezier(a, b, c, t) {
+    var u = 1 - t;
+    return u * u * a + 2 * u * t * b + t * t * c;
+  }
+  function fontString(size, weight, family) {
+    return (weight || 500) + ' ' + size + 'px ' + (family || FONT_FAMILY);
+  }
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+  function highlightCode(line) {
+    var tokenRegex = /(\/\*.*?\*\/|\/\/[^\n]*|\b(?:const|let|var|function|return|for|if|else|requestAnimationFrame)\b|\b[A-Za-z_$][\w$]*(?=\s*\()|'[^']*'|"[^"]*"|#[0-9a-fA-F]{3,8}|\b\d+(?:\.\d+)?\b|=>|[=+\-*/<>(){}[\],.;:])/g;
+    var result = '';
+    var last = 0;
+    var match;
+    while ((match = tokenRegex.exec(line))) {
+      result += escapeHtml(line.slice(last, match.index));
+      var token = match[0];
+      var cls = 'tok-punc';
+      if (/^\/[/*]/.test(token)) {
+        cls = 'tok-com';
+      } else if (/^(const|let|var|function|return|for|if|else|requestAnimationFrame)$/.test(token)) {
+        cls = 'tok-kw';
+      } else if (/^['"]/.test(token)) {
+        cls = 'tok-str';
+      } else if (/^#/.test(token) || /^\d/.test(token)) {
+        cls = 'tok-num';
+      } else if (/^[=+\-*/<>]$/.test(token) || token === '=>') {
+        cls = 'tok-op';
+      } else if (/^[A-Za-z_$]/.test(token)) {
+        cls = 'tok-fn';
+      }
+      result += '<span class="' + cls + '">' + escapeHtml(token) + '</span>';
+      last = match.index + token.length;
+    }
+    result += escapeHtml(line.slice(last));
+    return result || '&nbsp;';
+  }
+  function buildCodeAtmosphere() {
+    codeAtmosphereTrack.innerHTML = '';
+    for (var pass = 0; pass < 4; pass++) {
+      for (var i = 0; i < CODE_LINES.length; i++) {
+        var row = document.createElement('div');
+        var lineNo = document.createElement('span');
+        var codeNode = document.createElement('code');
+        row.className = 'code-bg-line';
+        lineNo.className = 'n';
+        lineNo.textContent = String(i + 1).padStart(2, '0');
+        codeNode.innerHTML = highlightCode(CODE_LINES[i]);
+        row.appendChild(lineNo);
+        row.appendChild(codeNode);
+        codeAtmosphereTrack.appendChild(row);
+      }
+    }
+  }
+  function buildCodeViewer() {
+    codeTrack.innerHTML = '';
+    codeLineNodes.length = 0;
+
+    for (var i = 0; i < CODE_LINES.length; i++) {
+      var row = document.createElement('div');
+      var lineNo = document.createElement('span');
+      var codeNode = document.createElement('code');
+
+      row.className = 'code-line';
+      row.setAttribute('data-index', String(i));
+      lineNo.className = 'ln';
+      lineNo.textContent = String(i + 1).padStart(2, '0');
+      codeNode.innerHTML = highlightCode(CODE_LINES[i]);
+      row.appendChild(lineNo);
+      row.appendChild(codeNode);
+      codeTrack.appendChild(row);
+      codeLineNodes.push(row);
+    }
+  }
+
+  function updateRunningCode(now) {
+    var rows = CODE_LINES.length;
+    var lineHeight = codeTrack.scrollHeight
+      ? codeTrack.scrollHeight / rows
+      : 15;
+
+    if (!isFinite(lineHeight) || lineHeight < 7) lineHeight = 15;
+
+    var viewportHeight = codeViewport.clientHeight || 120;
+    var totalHeight = lineHeight * rows;
+    var maxOffset = Math.max(0, totalHeight - viewportHeight + lineHeight);
+    var elapsed = Math.max(0, now - codeStartedAt);
+    var offset = Math.min(elapsed * .001 * 56, maxOffset);
+    var progress = maxOffset > 0 ? offset / maxOffset : 1;
+    var active = progress >= .999
+      ? rows - 1
+      : Math.min(
+          rows - 1,
+          Math.floor((offset + viewportHeight * .42) / lineHeight)
+        );
+
+    lastRunningLine = active;
+    codeTrack.style.transform = 'translate3d(0,' + (-offset) + 'px,0)';
+    lineStatus.textContent = 'L' + String(active + 1).padStart(2, '0') + '/' + rows;
+    progressFill.style.width = (progress * 100).toFixed(1) + '%';
+
+    for (var i = 0; i < codeLineNodes.length; i++) {
+      var node = codeLineNodes[i];
+      node.classList.toggle(
+        'active',
+        Number(node.getAttribute('data-index')) === active
+      );
+    }
+  }
+
+  function heartPoint(t) {
+    var x = 16 * Math.pow(Math.sin(t), 3);
+    var y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+    return { x: heart.cx + x * heart.scale, y: heart.cy - y * heart.scale };
+  }
+
+  function heartPulse(now) {
+    var cycle = 2100;
+    var p = (now % cycle) / cycle;
+    var first = Math.exp(-Math.pow((p - .09) / .09, 2));
+    var second = .56 * Math.exp(-Math.pow((p - .27) / .11, 2));
+    return first + second;
+  }
+
+  function projectHeart3D(x, y, z, now) {
+    var spin = Math.sin(now * .00042) * .16;
+    var pulse = heartPulse(now);
+    var beat = 1 + .075 * pulse + .008 * Math.sin(now * .0007);
+    var tilt = -.10 + Math.sin(now * .00035) * .04;
+    var cs = Math.cos(spin);
+    var sn = Math.sin(spin);
+    var ct = Math.cos(tilt);
+    var st = Math.sin(tilt);
+    var x1 = x * cs + y * sn;
+    var y1 = -x * sn + y * cs;
+    var z1 = z * ct - y1 * st;
+    var y2 = y1 * ct + z * st;
+    var perspective = 1 / (1 - y2 / 58);
+    return {
+      x: heart.cx + x1 * heart.scale * perspective * beat,
+      y: heart.cy - z1 * heart.scale * perspective * beat,
+      depth: clamp(.32 + (y2 + 7) / 14, .12, 1)
+    };
+  }
+
+  function resize() {
+    w = window.innerWidth;
+    h = window.innerHeight;
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    [bg, fx].forEach(function (canvas) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+    });
+    bgCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    var monitorRect = monitor.getBoundingClientRect ? monitor.getBoundingClientRect() : { width: 236, height: 196 };
+    var wide = w >= 900;
+    stage.w = wide ? Math.max(420, w - monitorRect.width - 60) : w;
+    stage.h = h;
+    stage.cx = wide ? 24 + stage.w * .5 : w * .5;
+    stage.cy = h * .43;
+    heart.scale = Math.min(stage.w / 42, h / 34);
+    heart.cx = stage.cx;
+    heart.cy = stage.cy;
+
+    buildStars();
+    drawBackground();
+    ctx.clearRect(0, 0, w, h);
+    restart(performance.now());
+  }
+
+  function buildStars() {
+    stars.length = 0;
+    var count = Math.round(Math.min(210, Math.max(75, w * h / 6500)));
+    for (var i = 0; i < count; i++) {
+      stars.push({
+        x: Math.random() * w,
+        y: Math.random() * h * .88,
+        r: .2 + Math.random() * 1.15,
+        a: .1 + Math.random() * .5
+      });
+    }
+  }
+
+  function drawBackground() {
+    bgCtx.clearRect(0, 0, w, h);
+    var grad = bgCtx.createRadialGradient(w * .5, h * .42, 0, w * .5, h * .46, Math.max(w, h) * .78);
+    grad.addColorStop(0, '#130514');
+    grad.addColorStop(.36, '#07030d');
+    grad.addColorStop(1, '#010002');
+    bgCtx.fillStyle = grad;
+    bgCtx.fillRect(0, 0, w, h);
+    bgCtx.save();
+    bgCtx.globalCompositeOperation = 'lighter';
+    for (var i = 0; i < stars.length; i++) {
+      var s = stars[i];
+      bgCtx.beginPath();
+      bgCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      bgCtx.fillStyle = 'rgba(255,228,246,' + s.a + ')';
+      bgCtx.fill();
+    }
+    bgCtx.restore();
+  }
+
+  function makeParticle(x, y, options) {
+    if (particles.length >= maxParticles) particles.shift();
+    var color = options.color || PALETTE[Math.floor(Math.random() * PALETTE.length)];
+    var angle = options.angle === undefined ? Math.random() * Math.PI * 2 : options.angle;
+    var speed = options.speed === undefined ? 35 : options.speed;
+    particles.push({
+      x: x,
+      y: y,
+      vx: Math.cos(angle) * speed + (options.vx || 0),
+      vy: Math.sin(angle) * speed + (options.vy || 0),
+      gravity: options.gravity === undefined ? 42 : options.gravity,
+      drag: options.drag || .98,
+      age: 0,
+      life: options.life || (.7 + Math.random() * 1.1),
+      size: options.size || (.6 + Math.random() * 1.65),
+      r: color.r,
+      g: color.g,
+      b: color.b,
+      phase: Math.random() * Math.PI * 2
+    });
+  }
+
+  function drawParticles(dt) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i = particles.length - 1; i >= 0; i--) {
+      var p = particles[i];
+      p.age += dt;
+      if (p.age >= p.life) {
+        particles.splice(i, 1);
+        continue;
+      }
+      p.vx *= p.drag;
+      p.vy = p.vy * p.drag + p.gravity * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      var k = 1 - p.age / p.life;
+      var twinkle = .65 + .35 * Math.sin(p.age * 54 + p.phase);
+      var alpha = Math.pow(k, 1.25) * twinkle;
+      var radius = p.size * (.5 + k * .8);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(.15, radius), 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(' + p.r + ',' + p.g + ',' + p.b + ',' + alpha + ')';
+      ctx.fill();
+      if (radius > 1.2) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, radius * 3, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(' + p.r + ',' + p.g + ',' + p.b + ',' + (alpha * .07) + ')';
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  function fitTextStyle(text, centerY, initialSize, maxWidth, maxTargets) {
+    var lines = text.split('\n');
+    var size = initialSize;
+    var isKaomoji = /[▽￣ブ]/.test(text);
+    var family = isKaomoji ? KAOMOJI_FONT : FONT_FAMILY;
+    textCtx.font = fontString(size, 500, family);
+    var widest = 0;
+    for (var i = 0; i < lines.length; i++) {
+      widest = Math.max(widest, textCtx.measureText(lines[i]).width);
+    }
+    if (widest > maxWidth) size *= maxWidth / widest;
+
+    var lineHeight = size * 1.48;
+    var totalHeight = lineHeight * lines.length;
+    var startY = centerY - totalHeight * .5;
+    var gap = Math.max(3, Math.round(size * (isKaomoji ? .085 : .12)));
+    var targets = [];
+
+    textCanvas.width = w;
+    textCanvas.height = h;
+    textCtx.clearRect(0, 0, w, h);
+    textCtx.font = fontString(size, 500, family);
+    textCtx.textAlign = 'center';
+    textCtx.textBaseline = 'middle';
+    textCtx.fillStyle = '#fff';
+    for (var j = 0; j < lines.length; j++) {
+      textCtx.fillText(lines[j], stage.cx, startY + lineHeight * (j + .5));
+    }
+
+    var pixels = textCtx.getImageData(0, 0, w, h).data;
+    for (var y = 0; y < h; y += gap) {
+      for (var x = 0; x < w; x += gap) {
+        if (pixels[(y * w + x) * 4 + 3] > 80) {
+          targets.push({
+            x: x + (Math.random() - .5) * gap * .42,
+            y: y + (Math.random() - .5) * gap * .42
+          });
+        }
+      }
+    }
+
+    if (targets.length > maxTargets) {
+      var sampled = [];
+      var stride = targets.length / maxTargets;
+      for (var k = 0; k < maxTargets; k++) {
+        sampled.push(targets[Math.floor(k * stride)]);
+      }
+      targets = sampled;
+    }
+
+    return {
+      lines: lines,
+      size: size,
+      lineHeight: lineHeight,
+      centerY: centerY,
+      family: family,
+      targets: targets
+    };
+  }
+
+  function buildAssemblies(targets, burstX, burstY, now, color, spread) {
+    var list = [];
+    for (var i = 0; i < targets.length; i++) {
+      var target = targets[i];
+      var angle = Math.random() * Math.PI * 2;
+      var radius = 12 + Math.random() * spread;
+      var sx = burstX + Math.cos(angle) * radius;
+      var sy = burstY + Math.sin(angle) * radius;
+      var projected = target.x3 === undefined
+        ? { x: target.x, y: target.y, depth: target.depth === undefined ? 1 : target.depth }
+        : projectHeart3D(target.x3, target.y3, target.z3, now);
+      list.push({
+        sx: sx,
+        sy: sy,
+        cx: (sx + projected.x) * .5 + (Math.random() - .5) * 58,
+        cy: (sy + projected.y) * .5 + (Math.random() - .5) * 58,
+        tx: projected.x,
+        ty: projected.y,
+        x3: target.x3,
+        y3: target.y3,
+        z3: target.z3,
+        is3d: target.x3 !== undefined,
+        startAt: now,
+        delay: Math.random() * 420,
+        duration: 980 + Math.random() * 520,
+        size: .55 + Math.random() * 1.35,
+        phase: Math.random() * Math.PI * 2,
+        depth: projected.depth,
+        color: color
+      });
+    }
+    return list;
+  }
+
+  function buildHeartAssemblies(burstX, burstY, now) {
+    var targets = [];
+    var surfaceTarget = 3100;
+    var volumeTarget = 1900;
+
+    for (var i = 0; i < surfaceTarget; i++) {
+      var t = Math.random() * Math.PI * 2;
+      var edgeX = 16 * Math.pow(Math.sin(t), 3);
+      var edgeZ = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+      var r = .88 + Math.random() * .12;
+      var depth = Math.random() * 2 - 1;
+      var thickness = Math.pow(Math.max(0, 1 - depth * depth), .34);
+      targets.push({
+        x3: edgeX * r * thickness,
+        y3: depth * 6.2,
+        z3: edgeZ * r * thickness,
+        surface: true,
+        depth: .70 + Math.random() * .30
+      });
+    }
+
+    for (var j = 0; j < volumeTarget; j++) {
+      var vt = Math.random() * Math.PI * 2;
+      var vx = 16 * Math.pow(Math.sin(vt), 3);
+      var vz = 13 * Math.cos(vt) - 5 * Math.cos(2 * vt) - 2 * Math.cos(3 * vt) - Math.cos(4 * vt);
+      var vr = Math.pow(Math.random(), .55) * .94;
+      var vd = Math.random() * 2 - 1;
+      var vth = Math.pow(Math.max(0, 1 - vd * vd), .42);
+      targets.push({
+        x3: vx * vr * vth,
+        y3: vd * 5.6,
+        z3: vz * vr * vth,
+        surface: false,
+        depth: .24 + Math.random() * .58
+      });
+    }
+
+    var list = buildAssemblies(targets, burstX, burstY, now, PALETTE[2], 104);
+    for (var k = 0; k < list.length; k++) {
+      var surface = list[k].surface === true;
+      if (k % 31 === 0) list[k].color = PALETTE[3];
+      else if (k % 7 === 0) list[k].color = PALETTE[1];
+      list[k].size *= surface
+        ? .25 + list[k].depth * .21
+        : .11 + list[k].depth * .12;
+    }
+    return list;
+  }
+
+  function drawAssemblies(list, now, fade) {
+    if (!list || fade <= 0) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i = 0; i < list.length; i++) {
+      var d = list[i];
+      var local = clamp((now - d.startAt - d.delay) / d.duration, 0, 1);
+      var k = easeOut(local);
+      var targetX = d.tx;
+      var targetY = d.ty;
+      var targetDepth = d.depth === undefined ? 1 : d.depth;
+
+      if (d.is3d) {
+        var projected = projectHeart3D(d.x3, d.y3, d.z3, now);
+        targetX = projected.x;
+        targetY = projected.y;
+        targetDepth = projected.depth;
+      }
+
+      var x = bezier(d.sx, d.cx, targetX, k);
+      var y = bezier(d.sy, d.cy, targetY, k);
+      var pulse = d.is3d ? heartPulse(now) : 0;
+      if (d.is3d) {
+        x += Math.sin(now * .0016 + d.phase) * (d.surface ? 2.2 : 1.1);
+        y += Math.cos(now * .00135 + d.phase * 1.4) * (d.surface ? 2.0 : 1.0);
+      }
+      var twinkle = .68 + .32 * Math.sin(now * .006 + d.phase);
+      var depth = targetDepth;
+      var surface = d.surface === true;
+      var alpha = (.28 + .72 * twinkle) * fade * (.36 + depth * .64) * (surface ? 1 : .42) * (1 + pulse * .16);
+      var radius = d.size * (.78 + depth * .38) * (1 + Math.sin(Math.PI * local) * .55) * (surface ? 1.12 : .84) * (1 + pulse * (surface ? .14 : .06));
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(' + d.color.r + ',' + d.color.g + ',' + d.color.b + ',' + alpha + ')';
+      ctx.fill();
+      if (radius > 1.1) {
+        ctx.beginPath();
+        ctx.arc(x, y, radius * 3.1, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(' + d.color.r + ',' + d.color.g + ',' + d.color.b + ',' + (alpha * .065) + ')';
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+
+  function heartBasePoint() {
+    return { x: heart.cx, y: heart.cy + heart.scale * 19.0 };
+  }
+
+  function drawPixelPig(now, strength) {
+    strength = clamp(strength, 0, 1);
+    if (strength <= 0) return;
+
+    var base = heartBasePoint();
+    var pixel = Math.max(1.8, heart.scale * .26);
+    var rows = [
+      '..##....##..',
+      '.##########.',
+      '############',
+      '##o######o##',
+      '##.######.##',
+      '##ssssssss##',
+      '##s#ssss#s##',
+      '##ssssssss##',
+      '.##########.'
+    ];
+    var cols = rows[0].length;
+    var height = rows.length;
+    var originX = base.x - cols * pixel * .5;
+    var originY = base.y + pixel * 1.1;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    ctx.fillStyle = 'rgba(255,55,160,' + (.11 * strength) + ')';
+    ctx.fillRect(originX - pixel * 2, originY + height * pixel + pixel, cols * pixel + pixel * 4, pixel * .55);
+
+    for (var r = 0; r < height; r++) {
+      for (var c = 0; c < cols; c++) {
+        var ch = rows[r].charAt(c);
+        if (ch === '.') continue;
+
+        var color = ch === 'o'
+          ? { r: 220, g: 68, b: 145 }
+          : (ch === 's' ? PALETTE[3] : PALETTE[2]);
+        var twinkle = .76 + .24 * Math.sin(now * .013 + r * 2.1 + c * 1.7);
+        var px = originX + (c + .5) * pixel;
+        var py = originY + (r + .5) * pixel + Math.sin(now * .004 + c) * pixel * .06;
+        var radius = pixel * (ch === 'o' ? .44 : .38) * twinkle;
+
+        ctx.beginPath();
+        ctx.arc(px, py, radius, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(' + color.r + ',' + color.g + ',' + color.b + ',' + (.9 * strength * twinkle) + ')';
+        ctx.fill();
+
+        if (radius > .9) {
+          ctx.beginPath();
+          ctx.arc(px, py, radius * 2.8, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(' + color.r + ',' + color.g + ',' + color.b + ',' + (.08 * strength) + ')';
+          ctx.fill();
+        }
+      }
+    }
+
+    ctx.restore();
+  }
+
+
+  function emitBaseStream(now, strength) {
+    if (now - lastBaseEmit < 40) return;
+    lastBaseEmit = now;
+    var base = heartBasePoint();
+    var count = 1 + Math.round(2 * strength);
+    for (var i = 0; i < count; i++) {
+      var angle = -Math.PI * .5 + (Math.random() - .5) * .92;
+      makeParticle(base.x + (Math.random() - .5) * heart.scale * 1.3, base.y + (Math.random() - .5) * 4, {
+        angle: angle,
+        speed: 28 + Math.random() * 68,
+        vx: (Math.random() - .5) * 20,
+        life: .8 + Math.random() * 1.3,
+        size: .42 + Math.random() * 1.35,
+        gravity: -9 - Math.random() * 10,
+        drag: .984,
+        color: Math.random() < .22 ? PALETTE[3] : PALETTE[2]
+      });
+    }
+  }
+
+  function emitHeartWisps(now, strength) {
+    if (!current || !current.assemblies || now - lastWispEmit < 55) return;
+    lastWispEmit = now;
+    var count = 3 + Math.round(strength * 2);
+    var list = current.assemblies;
+    for (var i = 0; i < count; i++) {
+      var d = list[Math.floor(Math.random() * list.length)];
+      if (!d || !d.is3d) continue;
+      var p = projectHeart3D(d.x3, d.y3, d.z3, now);
+      makeParticle(p.x, p.y, {
+        angle: Math.random() * Math.PI * 2,
+        speed: 5 + Math.random() * 18,
+        life: .5 + Math.random() * 1.2,
+        size: .18 + Math.random() * .62,
+        gravity: -2,
+        drag: .986,
+        color: d.color
+      });
+    }
+  }
+
+  function drawTextBlock(style, alpha) {
+    if (!style || alpha <= 0) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+    ctx.font = fontString(style.size, 500, style.family);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowBlur = 18;
+    ctx.shadowColor = 'rgba(255,126,192,.42)';
+    var grad = ctx.createLinearGradient(stage.cx - stage.w * .25, 0, stage.cx + stage.w * .25, 0);
+    grad.addColorStop(0, 'rgba(255,190,222,.96)');
+    grad.addColorStop(.48, 'rgba(255,222,241,1)');
+    grad.addColorStop(1, 'rgba(255,178,214,.96)');
+    ctx.fillStyle = grad;
+    var startY = style.centerY - style.lineHeight * style.lines.length * .5;
+    for (var i = 0; i < style.lines.length; i++) {
+      ctx.fillText(style.lines[i], stage.cx, startY + style.lineHeight * (i + .5));
+    }
+    ctx.restore();
+  }
+
+  function startRocket(kind, index, now) {
+    var isHeart = kind === 'heart';
+    var targetY = isHeart ? heartBasePoint().y : h * .5;
+    var color = isHeart ? PALETTE[2] : (messages[index].kind === 'name' ? PALETTE[3] : PALETTE[2]);
+    var distance = h + 26 - targetY;
+    rocket = {
+      kind: kind,
+      index: index,
+      x: stage.cx + (isHeart ? 0 : (Math.random() - .5) * stage.w * .055),
+      y: h + 26,
+      vy: -Math.sqrt(2 * ROCKET_GRAVITY * distance),
+      gravity: ROCKET_GRAVITY,
+      targetY: targetY,
+      color: color
+    };
+    phase = isHeart ? 'heartLaunch' : 'messageLaunch';
+    phaseStart = now;
+  }
+
+  function explodeAt(x, y, color, count) {
+    for (var i = 0; i < count; i++) {
+      makeParticle(x, y, {
+        angle: Math.random() * Math.PI * 2,
+        speed: 42 + Math.random() * 190,
+        life: .55 + Math.random() * 1.15,
+        size: .6 + Math.random() * 2,
+        gravity: 58 + Math.random() * 58,
+        drag: .975,
+        color: color
+      });
+    }
+  }
+
+  function updateRocket(dt, now) {
+    if (!rocket) return;
+    rocket.vy += rocket.gravity * dt;
+    var oldY = rocket.y;
+    rocket.y += rocket.vy * dt;
+
+    var trail = Math.max(3, Math.round(Math.abs(oldY - rocket.y) * .16));
+    for (var i = 0; i < trail; i++) {
+      makeParticle(rocket.x + (Math.random() - .5) * 3, rocket.y + (Math.random() - .5) * 3, {
+        angle: Math.PI * .5 + (Math.random() - .5) * .75,
+        speed: 5 + Math.random() * 17,
+        life: .28 + Math.random() * .58,
+        size: .5 + Math.random() * 1.25,
+        gravity: 56,
+        drag: .972,
+        color: rocket.color
+      });
+    }
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    var r = 11 + Math.sin(now * .028) * 2.5;
+    var grad = ctx.createRadialGradient(rocket.x, rocket.y, 0, rocket.x, rocket.y, r);
+    grad.addColorStop(0, 'rgba(255,255,255,.98)');
+    grad.addColorStop(.18, 'rgba(255,214,239,.9)');
+    grad.addColorStop(.48, 'rgba(255,70,171,.42)');
+    grad.addColorStop(1, 'rgba(255,20,120,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(rocket.x, rocket.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    if (rocket.y <= rocket.targetY || rocket.vy >= 0) {
+      var x = rocket.x;
+      var y = Math.min(rocket.y, rocket.targetY);
+      var kind = rocket.kind;
+      var index = rocket.index;
+      var color = rocket.color;
+      rocket = null;
+      if (kind === 'heart') {
+        explodeAt(x, y, color, 86);
+        emitBaseStream(now, 1);
+        heartSpinStart = now + 1600;
+        current = {
+          kind: 'heart',
+          assemblies: buildHeartAssemblies(x, y, now),
+          startAt: now
+        };
+        phase = 'heartReveal';
+      } else {
+        explodeAt(x, y, color, 112);
+        var isName = messages[index].kind === 'name';
+        var size = isName ? Math.min(stage.w * .085, 34) : Math.min(stage.w * .052, 21);
+        var style = fitTextStyle(messages[index].text, h * .5, size, stage.w * .82, isName ? 330 : 470);
+        current = {
+          kind: 'message',
+          index: index,
+          style: style,
+          assemblies: buildAssemblies(style.targets, x, y, now, color, isName ? 70 : 58),
+          startAt: now
+        };
+        phase = 'messageReveal';
+      }
+      phaseStart = now;
+    }
+  }
+
+  function explodeHeartAssemblies(list, now) {
+    if (!list) return;
+    for (var i = 0; i < list.length; i += 2) {
+      var d = list[i];
+      var burstPoint = d.is3d
+        ? projectHeart3D(d.x3, d.y3, d.z3, now)
+        : { x: d.tx, y: d.ty };
+      var angle = Math.atan2(burstPoint.y - heart.cy, burstPoint.x - heart.cx) + (Math.random() - .5) * .7;
+      makeParticle(burstPoint.x, burstPoint.y, {
+        angle: angle,
+        speed: 42 + Math.random() * 178,
+        life: .55 + Math.random() * 1.02,
+        size: .42 + Math.random() * 1.45,
+        gravity: 32 + Math.random() * 40,
+        drag: .976,
+        color: d.color
+      });
+    }
+  }
+
+  function drawHeartReveal(elapsed, now) {
+    var fadeIn = clamp((elapsed - 180) / 700, 0, 1);
+    var pulse = heartPulse(now);
+    drawPixelPig(now, .72 + Math.min(1, pulse) * .28);
+    emitBaseStream(now, 1);
+    drawAssemblies(current.assemblies, now, fadeIn);
+    emitHeartWisps(now, .9);
+
+    if (elapsed >= HEART_FORM_TIME) {
+      chaosUntil = now + 1250;
+      for (var i = 0; i < 160; i++) emitChaos(now);
+      phase = 'heartFinale';
+      phaseStart = now;
+    }
+  }
+
+  function drawHeartBurst(elapsed, now) {
+    var k = clamp(elapsed / HEART_BURST_TIME, 0, 1);
+    drawPixelPig(now, 1 - k * .28);
+    emitBaseStream(now, .72);
+
+    if (elapsed >= HEART_BURST_TIME) {
+      var base = heartBasePoint();
+      current = {
+        kind: 'heart',
+        assemblies: buildHeartAssemblies(base.x, base.y, now),
+        startAt: now
+      };
+      phase = 'heartReform';
+      phaseStart = now;
+    }
+  }
+
+  function drawHeartReform(elapsed, now) {
+    var fadeIn = clamp(elapsed / 820, 0, 1);
+    drawPixelPig(now, .82);
+    emitBaseStream(now, .86);
+    drawAssemblies(current.assemblies, now, fadeIn);
+
+    if (elapsed >= HEART_REFORM_TIME) {
+      startRocket('message', 0, now);
+    }
+  }
+
+  function drawMessageReveal(elapsed, now) {
+    var fadeIn = clamp((elapsed - 250) / 450, 0, 1);
+    var fadeOut = 1 - clamp((elapsed - 1350) / 550, 0, 1);
+    var fade = Math.min(fadeIn, fadeOut);
+    drawAssemblies(current.assemblies, now, fade);
+    drawTextBlock(current.style, fade * .93);
+    if (elapsed >= MESSAGE_LIFE) {
+      if (messageIndex < messages.length - 1) {
+        messageIndex++;
+        startRocket('message', messageIndex, now);
+      } else {
+        current = null;
+        phase = 'finished';
+        phaseStart = now;
+        startOutro(now);
+      }
+    }
+  }
+
+  function phaseName() {
+    if (phase === 'heartLaunch') return 'HEART LAUNCH';
+    if (phase === 'heartReveal') return 'HEART MORPH';
+    if (phase === 'heartFinale') return 'HEART END';
+    if (phase === 'heartBurst') return 'HEART BURST';
+    if (phase === 'heartReform') return 'HEART REFORM';
+    if (phase === 'messageLaunch') return 'TEXT LAUNCH';
+    if (phase === 'messageReveal') return 'TEXT MORPH';
+    if (phase === 'finished') return 'COMPLETE';
+    return 'RENDER';
+  }
+
+  function updateCodeAtmosphere(now) {
+    var rows = CODE_LINES.length;
+    var totalHeight = codeAtmosphereTrack.scrollHeight;
+    if (!totalHeight || !codeAtmosphere.clientHeight) return;
+    var rowHeight = totalHeight / (rows * 4);
+    var setHeight = rowHeight * rows;
+    var elapsed = Math.max(0, now - codeStartedAt);
+    var offset = Math.min(elapsed * .001 * 16, setHeight);
+    codeAtmosphereTrack.style.transform = 'translate3d(0,' + (-offset) + 'px,0)';
+  }
+
+  function updateCodeWindow(now, dt) {
+    var instantFps = dt > 0 ? 1 / dt : 60;
+    smoothFps = smoothFps * .9 + instantFps * .1;
+    updateRunningCode(now);
+    monitorClock += dt;
+
+    if (monitorClock < .095) return;
+    monitorClock = 0;
+
+    phaseLabel.textContent = phaseName();
+    fpsLabel.textContent = Math.round(smoothFps) + ' FPS';
+    particleLabel.textContent = particles.length + ' P';
+
+    if (phase === 'finished') {
+      terminalText.textContent = '> complete · executed once';
+      return;
+    }
+
+    var runningSource = CODE_LINES[lastRunningLine] || 'render();';
+    terminalText.textContent = '> ' + phase + ' · ' + runningSource.trim().slice(0, 42);
+  }
+
+  function drawHeartFinale(elapsed, now) {
+    if (now < chaosUntil) emitChaos(now);
+    if (elapsed >= 1250) startRocket('message', 0, now);
+  }
+
+  function emitChaos(now) {
+    var count = 5;
+    for (var i = 0; i < count; i++) {
+      if (Math.random() < .24) {
+        var base = heartBasePoint();
+        makeParticle(base.x + (Math.random() - .5) * heart.scale * 2.2, base.y + (Math.random() - .5) * 8, {
+          angle: -Math.PI * .5 + (Math.random() - .5) * 1.15,
+          speed: 24 + Math.random() * 85,
+          life: .7 + Math.random() * 1.4,
+          size: .35 + Math.random() * 1.5,
+          gravity: 12 + Math.random() * 28,
+          drag: .984,
+          color: Math.random() < .25 ? PALETTE[3] : PALETTE[2]
+        });
+        continue;
+      }
+
+      var t = Math.random() * Math.PI * 2;
+      var p = heartPoint(t);
+      var dx = p.x - heart.cx;
+      var dy = p.y - heart.cy;
+      var len = Math.sqrt(dx * dx + dy * dy) || 1;
+      var angle = Math.atan2(dy, dx) + (Math.random() - .5) * 1.4;
+      var spread = .35 + Math.random() * .95;
+      var px = heart.cx + dx * spread + (Math.random() - .5) * 8;
+      var py = heart.cy + dy * spread + (Math.random() - .5) * 8;
+      makeParticle(px, py, {
+        angle: angle,
+        speed: 18 + Math.random() * 155,
+        life: .65 + Math.random() * 1.7,
+        size: .26 + Math.random() * 1.75,
+        gravity: 8 + Math.random() * 36,
+        drag: .985,
+        color: Math.random() < .24 ? PALETTE[3] : PALETTE[Math.random() < .5 ? 1 : 2]
+      });
+    }
+  }
+
+  function startOutro(now) {
+    if (outroStarted) return;
+    outroStarted = true;
+    codeAtmosphereTrack.classList.add('finish');
+    codeAtmosphere.classList.add('finish');
+    blackout.classList.add('active');
+  }
+
+  function restart(now) {
+    particles.length = 0;
+    current = null;
+    rocket = null;
+    messageIndex = 0;
+    lastRunningLine = 0;
+    lastBaseEmit = 0;
+    lastWispEmit = 0;
+    chaosUntil = 0;
+    outroStarted = false;
+    blackout.classList.remove('active');
+    codeAtmosphere.classList.remove('finish');
+    codeAtmosphereTrack.classList.remove('finish');
+    codeStartedAt = now;
+    codeAtmosphereTrack.style.transform = 'translate3d(0,0,0)';
+    terminalText.textContent = '> canvas.init()';
+    ctx.clearRect(0, 0, w, h);
+    startRocket('heart', 0, now);
+  }
+
+  function frame(now) {
+    var dt = Math.min((now - lastTime) / 1000 || .016, .034);
+    lastTime = now;
+    var elapsed = now - phaseStart;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = 'rgba(0,0,0,.145)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+
+    drawParticles(dt);
+    if (phase === 'finished' && now < chaosUntil) emitChaos(now);
+
+    if (phase === 'heartLaunch') {
+      drawPixelPig(now, .42);
+      emitBaseStream(now, .55);
+      updateRocket(dt, now);
+    } else if (phase === 'messageLaunch') {
+      updateRocket(dt, now);
+    } else if (phase === 'heartReveal') {
+      drawHeartReveal(elapsed, now);
+    } else if (phase === 'heartBurst') {
+      drawHeartBurst(elapsed, now);
+    } else if (phase === 'heartReform') {
+      drawHeartReform(elapsed, now);
+    } else if (phase === 'heartFinale') {
+      drawHeartFinale(elapsed, now);
+    } else if (phase === 'messageReveal') {
+      drawMessageReveal(elapsed, now);
+    }
+
+    updateCodeAtmosphere(now);
+    updateCodeWindow(now, dt);
+    requestAnimationFrame(frame);
+  }
+
+  window.addEventListener('resize', resize, { passive: true });
+  window.addEventListener('orientationchange', function () { setTimeout(resize, 120); }, { passive: true });
+  buildCodeAtmosphere();
+  buildCodeViewer();
+  resize();
+  lastTime = performance.now();
+  requestAnimationFrame(frame);
+})();
+  // 1314 lines · 一生一世
+  // 保持这个文件的浪漫行数
+</script>
+</body>
+</html>
